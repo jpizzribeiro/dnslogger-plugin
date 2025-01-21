@@ -3,6 +3,7 @@ package dnslogger
 import (
 	"context"
 	"fmt"
+	"github.com/coredns/coredns/request"
 
 	"github.com/coredns/coredns/plugin"
 	"github.com/miekg/dns"
@@ -17,6 +18,10 @@ type DNSLogger struct {
 
 // ServeDNS processa as requisições DNS
 func (dl *DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
+	state := request.Request{W: w, Req: r}
+	name := state.Name()
+	fmt.Println(name)
+
 	q := r.Question[0]
 	fmt.Println(q)
 	logEntry := fmt.Sprintf("Received query: %s %s %d", q.Name, dns.TypeToString[q.Qtype], q.Qclass)
@@ -27,7 +32,7 @@ func (dl *DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.
 	}
 
 	// Continuar com o próximo plugin na cadeia
-	return dl.Next.ServeDNS(ctx, w, r)
+	return plugin.NextOrFailure(dl.Name(), dl.Next, ctx, w, r)
 }
 
 // Name retorna o nome do plugin
