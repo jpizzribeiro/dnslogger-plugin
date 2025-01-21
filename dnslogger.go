@@ -17,7 +17,7 @@ type DNSLogger struct {
 }
 
 // ServeDNS processa as requisições DNS
-func (dl *DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
+func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	state := request.Request{W: w, Req: r}
 	name := state.Name()
 	fmt.Println(name)
@@ -36,6 +36,6 @@ func (dl *DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.
 }
 
 // Name retorna o nome do plugin
-func (dl *DNSLogger) Name() string {
+func (dl DNSLogger) Name() string {
 	return "dnslogger"
 }
