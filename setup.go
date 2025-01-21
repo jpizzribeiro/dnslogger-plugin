@@ -6,7 +6,12 @@ import (
 	"github.com/coredns/coredns/plugin"
 )
 
-func init() { plugin.Register("dnslogger", setup) }
+func init() {
+	caddy.RegisterPlugin("dnslogger", caddy.Plugin{
+		ServerType: "dns",
+		Action:     setup,
+	})
+}
 
 func setup(c *caddy.Controller) error {
 	c.Next() // Ignore "example" and give us the next token.
