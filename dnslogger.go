@@ -3,6 +3,7 @@ package dnslogger
 import (
 	"context"
 	"fmt"
+	"github.com/DataDog/appsec-internal-go/log"
 
 	"github.com/coredns/coredns/plugin"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
@@ -19,6 +20,11 @@ type DNSLogger struct {
 
 // ServeDNS processa as requisições DNS
 func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
+	log.Debug("Received response")
+
+	// Wrap.
+	pw := NewResponsePrinter(w)
+
 	// Captura o estado da requisição
 	state := request.Request{W: w, Req: r}
 	name := state.Name()
@@ -43,10 +49,26 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 		}
 	}
 
-	return plugin.NextOrFailure(dl.Name(), dl.Next, ctx, w, r)
+	return plugin.NextOrFailure(dl.Name(), dl.Next, ctx, pw, r)
 }
 
 // Name retorna o nome do plugin
 func (dl DNSLogger) Name() string {
 	return "dnslogger"
+}
+
+// ResponsePrinter wrap a dns.ResponseWriter and will write example to standard output when WriteMsg is called.
+type ResponsePrinter struct {
+	dns.ResponseWriter
+}
+
+// NewResponsePrinter returns ResponseWriter.
+func NewResponsePrinter(w dns.ResponseWriter) *ResponsePrinter {
+	return &ResponsePrinter{ResponseWriter: w}
+}
+
+// WriteMsg calls the underlying ResponseWriter's WriteMsg method and prints "example" to standard output.
+func (r *ResponsePrinter) WriteMsg(res *dns.Msg) error {
+	log.Info("example")
+	return r.ResponseWriter.WriteMsg(res)
 }
