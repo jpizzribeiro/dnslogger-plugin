@@ -3,6 +3,7 @@ package dnslogger
 import (
 	"context"
 	"fmt"
+	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	"github.com/coredns/coredns/request"
 
 	"github.com/coredns/coredns/plugin"
@@ -20,16 +21,19 @@ type DNSLogger struct {
 func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	state := request.Request{W: w, Req: r}
 	name := state.Name()
-	fmt.Println(name)
 
-	q := r.Question[0]
-	fmt.Println(q)
-	logEntry := fmt.Sprintf("Received query: %s %s %d", q.Name, dns.TypeToString[q.Qtype], q.Qclass)
+	rrw := dnstest.NewRecorder(w)
+	rc, err := plugin.NextOrFailure(dl.Name(), dl.Next, ctx, rrw, r)
+	if err != nil {
+		fmt.Println("plugin.NextOrFinish err:", err)
+	}
+	fmt.Println(name, rrw.Msg.Question, rc)
+	// logEntry := fmt.Sprintf("Received query: %s %s %d", q.Name, dns.TypeToString[q.Qtype], q.Qclass)
 
 	// Enviar log via UDP
-	if err := dl.Client.Send(logEntry); err != nil {
-		fmt.Printf("Error sending log: %v\n", err)
-	}
+	// if err := dl.Client.Send(logEntry); err != nil {
+	// fmt.Printf("Error sending log: %v\n", err)
+	// }
 
 	// Continuar com o próximo plugin na cadeia
 	return plugin.NextOrFailure(dl.Name(), dl.Next, ctx, w, r)
