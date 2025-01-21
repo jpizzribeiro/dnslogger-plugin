@@ -33,7 +33,7 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 
 	// Registrar log no servidor
 	rrw := dnstest.NewRecorder(w)
-	rc, err := plugin.NextOrFailure(dl.Name(), dl.Next, ctx, rrw, r)
+	rc, err := plugin.NextOrFailure(state.Name(), dl.Next, ctx, rrw, r)
 	if err != nil {
 		clog.Warningf("Error processing DNS request: %v", err)
 		return rc, err
