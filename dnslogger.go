@@ -2,26 +2,59 @@ package dnslogger
 
 import (
 	"context"
+
 	"github.com/coredns/coredns/plugin"
+	"github.com/coredns/coredns/plugin/metrics"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
-	"github.com/coredns/coredns/plugin/pkg/replacer"
-	"github.com/coredns/coredns/request"
 
 	"github.com/miekg/dns"
 )
 
-// DNSLogger is a basic request logging plugin.
+// Define log to be a logger with the plugin name in it. This way we can just use log.Info and
+// friends to log.
+var log = clog.NewWithPlugin("dnslogger")
+
+// DNSLogger is an example plugin to show how to write a plugin.
 type DNSLogger struct {
 	Next plugin.Handler
-	repl replacer.Replacer
+}
+
+// ServeDNS implements the plugin.Handler interface. This method gets called when example is used
+// in a Server.
+func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
+	// This function could be simpler. I.e. just fmt.Println("dnslogger") here, but we want to show
+	// a slightly more complex example as to make this more interesting.
+	// Here we wrap the dns.ResponseWriter in a new ResponseWriter and call the next plugin, when the
+	// answer comes back, it will print "dnslogger".
+
+	// Debug log that we've have seen the query. This will only be shown when the debug plugin is loaded.
+	log.Debug("Received response")
+
+	// Wrap.
+	pw := NewResponsePrinter(w)
+
+	// Export metric with the server label set to the current server handling the request.
+	requestCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
+
+	// Call next plugin (if any).
+	return plugin.NextOrFailure(dl.Name(), dl.Next, ctx, pw, r)
 }
 
 // Name implements the Handler interface.
 func (dl DNSLogger) Name() string { return "dnslogger" }
 
-// ServeDNS implements the plugin.Handler interface.
-func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
-	state := request.Request{W: w, Req: r}
-	clog.Info(state.IP(), state.Name())
-	return plugin.NextOrFailure(state.Name(), dl.Next, ctx, w, r)
+// ResponsePrinter wrap a dns.ResponseWriter and will write example to standard output when WriteMsg is called.
+type ResponsePrinter struct {
+	dns.ResponseWriter
+}
+
+// NewResponsePrinter returns ResponseWriter.
+func NewResponsePrinter(w dns.ResponseWriter) *ResponsePrinter {
+	return &ResponsePrinter{ResponseWriter: w}
+}
+
+// WriteMsg calls the underlying ResponseWriter's WriteMsg method and prints "dnslogger" to standard output.
+func (r *ResponsePrinter) WriteMsg(res *dns.Msg) error {
+	log.Info("dnslogger")
+	return r.ResponseWriter.WriteMsg(res)
 }
