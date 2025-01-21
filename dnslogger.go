@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/coredns/coredns/plugin"
-	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
 	"github.com/coredns/coredns/request"
 	"github.com/miekg/dns"
@@ -19,19 +18,19 @@ type DNSLogger struct {
 }
 
 // ServeDNS processa as requisições DNS
-func (dl *DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
+func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	// Captura o estado da requisição
 	state := request.Request{W: w, Req: r}
 	name := state.Name()
 	qType := dns.TypeToString[state.QType()]
 
 	// Registrar log no servidor
-	rrw := dnstest.NewRecorder(w)
-	rc, err := plugin.NextOrFailure(dl.Name(), dl.Next, ctx, rrw, r)
-	if err != nil {
-		clog.Warningf("Error processing DNS request: %v", err)
-		return rc, err
-	}
+	//rrw := dnstest.NewRecorder(w)
+	//rc, err := plugin.NextOrFailure(dl.Name(), dl.Next, ctx, rrw, r)
+	//if err != nil {
+	//	clog.Warningf("Error processing DNS request: %v", err)
+	//	return rc, err
+	//}
 
 	// Preparar log para envio
 	logEntry := fmt.Sprintf("Received query: %s Type: %s", name, qType)
@@ -44,10 +43,10 @@ func (dl *DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.
 		}
 	}
 
-	return rc, nil
+	return plugin.NextOrFailure(dl.Name(), dl.Next, ctx, w, r)
 }
 
 // Name retorna o nome do plugin
-func (dl *DNSLogger) Name() string {
+func (dl DNSLogger) Name() string {
 	return "dnslogger"
 }
