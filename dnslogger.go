@@ -33,7 +33,7 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 
 	// Registrar log no servidor
 	rrw := dnstest.NewRecorder(w)
-	rc, err := plugin.NextOrFailure(state.Name(), dl.Next, ctx, rrw, r)
+	rc, err := plugin.NextOrFailure(dl.Name(), dl.Next, ctx, rrw, r)
 	if err != nil {
 		clog.Warningf("Error processing DNS request: %v", err)
 		return rc, err
@@ -41,11 +41,11 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 
 	// Preparar log para envio
 	logEntry := fmt.Sprintf("Received query: %s Type: %s", name, qType)
-	clog.Info(logEntry)
+	clog.Debug(logEntry)
 
 	// Enviar log via UDP
 	if dl.Client != nil {
-		if err := dl.Client.Send(logEntry); err != nil {
+		if err := dl.Client.Send(logEntry + "\n"); err != nil {
 			clog.Warningf("Error sending log via UDP: %v", err)
 		}
 	}

@@ -23,7 +23,7 @@ func NewUDPClient(socketAddr string) (*UDPClient, error) {
 		return nil, fmt.Errorf("failed to connect to UDP socket: %w", err)
 	}
 
-	_, err = conn.Write([]byte("connected on udp socket"))
+	_, err = conn.Write([]byte("connected on udp socket\n"))
 	if err != nil {
 		return nil, err
 	}
