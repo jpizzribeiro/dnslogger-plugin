@@ -18,6 +18,7 @@ type DNSLogger struct {
 // ServeDNS processa as requisições DNS
 func (dl *DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	q := r.Question[0]
+	fmt.Println(q)
 	logEntry := fmt.Sprintf("Received query: %s %s %d", q.Name, dns.TypeToString[q.Qtype], q.Qclass)
 
 	// Enviar log via UDP
