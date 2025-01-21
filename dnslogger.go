@@ -2,8 +2,8 @@ package dnslogger
 
 import (
 	"context"
-	"fmt"
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
+	clog "github.com/coredns/coredns/plugin/pkg/log"
 	"github.com/coredns/coredns/request"
 
 	"github.com/coredns/coredns/plugin"
@@ -25,9 +25,9 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 	rrw := dnstest.NewRecorder(w)
 	rc, err := plugin.NextOrFailure(dl.Name(), dl.Next, ctx, rrw, r)
 	if err != nil {
-		fmt.Println("plugin.NextOrFinish err:", err)
+		clog.Info("plugin.NextOrFinish err:", err)
 	}
-	fmt.Println(name, rrw.Msg.Question, rc)
+	clog.Info(name, rrw.Msg.Question, rc)
 	// logEntry := fmt.Sprintf("Received query: %s %s %d", q.Name, dns.TypeToString[q.Qtype], q.Qclass)
 
 	// Enviar log via UDP
