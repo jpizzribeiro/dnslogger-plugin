@@ -2,6 +2,7 @@ package dnslogger
 
 import (
 	"fmt"
+	"github.com/coredns/coredns/core/dnsserver"
 	"strings"
 
 	"github.com/coredns/caddy"
@@ -50,7 +51,11 @@ func setup(c *caddy.Controller) error {
 	})
 
 	// Registrar o handler
-	c.AddPlugin(func(next plugin.Handler) plugin.Handler {
+	//c.AddPlugin(func(next plugin.Handler) plugin.Handler {
+	//	dnsLogger.Next = next
+	//	return dnsLogger
+	//})
+	dnsserver.GetConfig(c).AddPlugin(func(next plugin.Handler) plugin.Handler {
 		dnsLogger.Next = next
 		return dnsLogger
 	})
