@@ -2,9 +2,11 @@ package dnslogger
 
 import (
 	"context"
+	"fmt"
+	"github.com/coredns/coredns/plugin/pkg/dnstest"
+	"github.com/coredns/coredns/request"
 
 	"github.com/coredns/coredns/plugin"
-	"github.com/coredns/coredns/plugin/metrics"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
 
 	"github.com/miekg/dns"
@@ -16,45 +18,40 @@ var log = clog.NewWithPlugin("dnslogger")
 
 // DNSLogger is an example plugin to show how to write a plugin.
 type DNSLogger struct {
-	Next plugin.Handler
+	Next       plugin.Handler
+	SocketAddr string
+	Client     *UDPClient
 }
 
 // ServeDNS implements the plugin.Handler interface. This method gets called when example is used
 // in a Server.
 func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
-	// This function could be simpler. I.e. just fmt.Println("dnslogger") here, but we want to show
-	// a slightly more complex example as to make this more interesting.
-	// Here we wrap the dns.ResponseWriter in a new ResponseWriter and call the next plugin, when the
-	// answer comes back, it will print "dnslogger".
+	// Captura o estado da requisição
+	state := request.Request{W: w, Req: r}
+	name := state.Name()
+	qType := dns.TypeToString[state.QType()]
 
-	// Debug log that we've have seen the query. This will only be shown when the debug plugin is loaded.
-	log.Debug("Received response")
+	// Registrar log no servidor
+	rrw := dnstest.NewRecorder(w)
+	rc, err := plugin.NextOrFailure(dl.Name(), dl.Next, ctx, rrw, r)
+	if err != nil {
+		clog.Warningf("Error processing DNS request: %v", err)
+		return rc, err
+	}
 
-	// Wrap.
-	pw := NewResponsePrinter(w)
+	// Preparar log para envio
+	logEntry := fmt.Sprintf("Received query: %s Type: %s", name, qType)
+	clog.Info(logEntry)
 
-	// Export metric with the server label set to the current server handling the request.
-	requestCount.WithLabelValues(metrics.WithServer(ctx)).Inc()
+	// Enviar log via UDP
+	if dl.Client != nil {
+		if err := dl.Client.Send(logEntry); err != nil {
+			clog.Warningf("Error sending log via UDP: %v", err)
+		}
+	}
 
-	// Call next plugin (if any).
-	return plugin.NextOrFailure(dl.Name(), dl.Next, ctx, pw, r)
+	return rc, nil
 }
 
 // Name implements the Handler interface.
 func (dl DNSLogger) Name() string { return "dnslogger" }
-
-// ResponsePrinter wrap a dns.ResponseWriter and will write example to standard output when WriteMsg is called.
-type ResponsePrinter struct {
-	dns.ResponseWriter
-}
-
-// NewResponsePrinter returns ResponseWriter.
-func NewResponsePrinter(w dns.ResponseWriter) *ResponsePrinter {
-	return &ResponsePrinter{ResponseWriter: w}
-}
-
-// WriteMsg calls the underlying ResponseWriter's WriteMsg method and prints "dnslogger" to standard output.
-func (r *ResponsePrinter) WriteMsg(res *dns.Msg) error {
-	log.Info("dnslogger")
-	return r.ResponseWriter.WriteMsg(res)
-}
