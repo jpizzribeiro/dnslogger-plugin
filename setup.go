@@ -35,10 +35,10 @@ func setup(c *caddy.Controller) error {
 		return plugin.Error("dnslogger", fmt.Errorf("failed to create UDP client: %v", err))
 	}
 
-	//dnsLogger := &DNSLogger{
-	//	SocketAddr: socketAddr,
-	//	Client:     client,
-	//}
+	dnsLogger := &DNSLogger{
+		SocketAddr: socketAddr,
+		Client:     client,
+	}
 
 	// Configurar inicialização e finalização
 	c.OnStartup(func() error {
@@ -56,7 +56,8 @@ func setup(c *caddy.Controller) error {
 	//	return dnsLogger
 	//})
 	dnsserver.GetConfig(c).AddPlugin(func(next plugin.Handler) plugin.Handler {
-		return DNSLogger{Next: next, Client: client, SocketAddr: socketAddr}
+		dnsLogger.Next = next
+		return dnsLogger
 	})
 
 	return nil
