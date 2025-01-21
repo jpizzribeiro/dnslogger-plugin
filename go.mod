@@ -1,4 +1,4 @@
-module github.com/jpizzribeiro/dnslooger-plugin
+module github.com/jpizzribeiro/dnslogger-plugin
 
 go 1.22.7
 
