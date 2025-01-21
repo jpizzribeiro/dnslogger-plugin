@@ -2,73 +2,72 @@ package dnslogger
 
 import (
 	"context"
-	"fmt"
-	"github.com/DataDog/appsec-internal-go/log"
+	"time"
 
 	"github.com/coredns/coredns/plugin"
+	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
+	"github.com/coredns/coredns/plugin/pkg/replacer"
+	"github.com/coredns/coredns/plugin/pkg/response"
 	"github.com/coredns/coredns/request"
+
 	"github.com/miekg/dns"
 )
 
-// DNSLogger é a estrutura principal do plugin
+// Logger is a basic request logging plugin.
 type DNSLogger struct {
-	Next       plugin.Handler
-	SocketAddr string
-	Client     *UDPClient
+	Next  plugin.Handler
+	Rules []Rule
+
+	repl replacer.Replacer
 }
 
-// ServeDNS processa as requisições DNS
-func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
-	log.Debug("Received response")
-
-	// Wrap.
-	pw := NewResponsePrinter(w)
-
-	// Captura o estado da requisição
+// ServeDNS implements the plugin.Handler interface.
+func (l DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	state := request.Request{W: w, Req: r}
 	name := state.Name()
-	qType := dns.TypeToString[state.QType()]
-
-	// Registrar log no servidor
-	//rrw := dnstest.NewRecorder(w)
-	//rc, err := plugin.NextOrFailure(dl.Name(), dl.Next, ctx, rrw, r)
-	//if err != nil {
-	//	clog.Warningf("Error processing DNS request: %v", err)
-	//	return rc, err
-	//}
-
-	// Preparar log para envio
-	logEntry := fmt.Sprintf("Received query: %s Type: %s", name, qType)
-	clog.Info(logEntry)
-
-	// Enviar log via UDP
-	if dl.Client != nil {
-		if err := dl.Client.Send(logEntry); err != nil {
-			clog.Warningf("Error sending log via UDP: %v", err)
+	for _, rule := range l.Rules {
+		if !plugin.Name(rule.NameScope).Matches(name) {
+			continue
 		}
+
+		rrw := dnstest.NewRecorder(w)
+		rc, err := plugin.NextOrFailure(l.Name(), l.Next, ctx, rrw, r)
+
+		// If we don't set up a class in config, the default "all" will be added
+		// and we shouldn't have an empty rule.Class.
+		_, ok := rule.Class[response.All]
+		var ok1 bool
+		if !ok {
+			tpe, _ := response.Typify(rrw.Msg, time.Now().UTC())
+			class := response.Classify(tpe)
+			_, ok1 = rule.Class[class]
+		}
+		if ok || ok1 {
+			logstr := l.repl.Replace(ctx, state, rrw, rule.Format)
+			clog.Warning(logstr)
+		}
+
+		return rc, err
 	}
-
-	return plugin.NextOrFailure(dl.Name(), dl.Next, ctx, pw, r)
+	return plugin.NextOrFailure(l.Name(), l.Next, ctx, w, r)
 }
 
-// Name retorna o nome do plugin
-func (dl DNSLogger) Name() string {
-	return "dnslogger"
+// Name implements the Handler interface.
+func (l DNSLogger) Name() string { return "dnslogger" }
+
+// Rule configures the logging plugin.
+type Rule struct {
+	NameScope string
+	Class     map[response.Class]struct{}
+	Format    string
 }
 
-// ResponsePrinter wrap a dns.ResponseWriter and will write example to standard output when WriteMsg is called.
-type ResponsePrinter struct {
-	dns.ResponseWriter
-}
-
-// NewResponsePrinter returns ResponseWriter.
-func NewResponsePrinter(w dns.ResponseWriter) *ResponsePrinter {
-	return &ResponsePrinter{ResponseWriter: w}
-}
-
-// WriteMsg calls the underlying ResponseWriter's WriteMsg method and prints "example" to standard output.
-func (r *ResponsePrinter) WriteMsg(res *dns.Msg) error {
-	log.Info("example")
-	return r.ResponseWriter.WriteMsg(res)
-}
+const (
+	// CommonLogFormat is the common log format.
+	CommonLogFormat = `{remote}:{port} ` + replacer.EmptyValue + ` {>id} "{type} {class} {name} {proto} {size} {>do} {>bufsize}" {rcode} {>rflags} {rsize} {duration}`
+	// CombinedLogFormat is the combined log format.
+	CombinedLogFormat = CommonLogFormat + ` "{>opcode}"`
+	// DefaultLogFormat is the default log format.
+	DefaultLogFormat = CommonLogFormat
+)

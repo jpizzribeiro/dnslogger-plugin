@@ -1,1 +1,1 @@
-# dnslooger-plugin
+# dnslogger-plugin
