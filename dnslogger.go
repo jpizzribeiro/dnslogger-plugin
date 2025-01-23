@@ -3,6 +3,7 @@ package dnslogger
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	"github.com/coredns/coredns/request"
@@ -40,6 +41,16 @@ type SourceConfig struct {
 	WhitelistCategories map[int]struct{}
 }
 
+type LogEntry struct {
+	DateTime         string `json:"datetime"`
+	Domain           string `json:"domain"`
+	RegisteredDomain string `json:"registered_domain"`
+	CategoryId       int    `json:"category"`
+	SourceIp         string `json:"source_ip"`
+	Type             string `json:"type"`
+	AccessType       string `json:"access_type"`
+}
+
 type Category struct {
 	ID   int
 	Name string
@@ -70,6 +81,17 @@ func (dl DNSLogger) searchDomainOnDuck(name string) *DuckRow {
 	return row
 }
 
+func (dl DNSLogger) emitToUDPSocket(logEntry LogEntry) {
+	msg, err := json.Marshal(logEntry)
+	if err == nil {
+		if dl.Client != nil {
+			if err := dl.Client.Send(string(msg) + "\n"); err != nil {
+				clog.Warningf("Error sending log via UDP: %v", err)
+			}
+		}
+	}
+}
+
 // ServeDNS implements the plugin.Handler interface. This method gets called when example is used
 // in a Server.
 func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
@@ -78,6 +100,14 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 	ip := state.IP()
 	name := state.Name()
 	qType := dns.TypeToString[state.QType()]
+
+	logEntryJson := LogEntry{
+		DateTime:   time.Now().Format(time.RFC3339),
+		Domain:     name,
+		SourceIp:   ip,
+		Type:       qType,
+		AccessType: "PASS",
+	}
 
 	var cacheKey = fmt.Sprintf("%s_%s", ip, name)
 
@@ -94,6 +124,8 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 		if ok {
 			onCache = true
 			row = rowOnCache
+
+			log.Infof("get duckrow on cache")
 		}
 
 		if !onCache {
@@ -112,14 +144,21 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 			}
 		}
 
+		logEntryJson.RegisteredDomain = tld.RegisteredDomain
+
 		sourceIp, exists := dl.Sources[ip]
 		if exists {
 			if row != nil {
-				dl.Cache.Set(cacheKey, row, time.Minute)
+				logEntryJson.CategoryId = row.CategoryId
+
+				if !onCache {
+					dl.Cache.Set(cacheKey, row, time.Minute)
+					log.Infof("Save domain on cache")
+					logEntryJson.AccessType = "BLOCK"
+				}
 
 				_, ok := sourceIp.BlockCategories[row.CategoryId]
 				if ok {
-					log.Errorf("Precisa bloquear")
 					m := new(dns.Msg).
 						SetRcode(r, dns.RcodeSuccess).
 						SetEdns0(4096, true)
@@ -137,12 +176,7 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 						}
 					}
 
-					logEntry := fmt.Sprintf("BLOCK Domain: %s", name)
-					if dl.Client != nil {
-						if err := dl.Client.Send(logEntry + "\n"); err != nil {
-							clog.Warningf("Error sending log via UDP: %v", err)
-						}
-					}
+					dl.emitToUDPSocket(logEntryJson)
 
 					w.WriteMsg(m)
 					return dns.RcodeSuccess, nil
@@ -160,15 +194,7 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 	}
 
 	// Preparar log para envio
-	logEntry := fmt.Sprintf("Received query: %s Type: %s", name, qType)
-	clog.Debug(logEntry)
-
-	// Enviar log via UDP
-	/*if dl.Client != nil {
-		if err := dl.Client.Send(logEntry + "\n"); err != nil {
-			clog.Warningf("Error sending log via UDP: %v", err)
-		}
-	}*/
+	dl.emitToUDPSocket(logEntryJson)
 
 	return rc, nil
 }
