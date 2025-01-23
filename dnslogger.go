@@ -2,6 +2,7 @@ package dnslogger
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	"github.com/coredns/coredns/request"
@@ -19,8 +20,10 @@ var log = clog.NewWithPlugin("dnslogger")
 // DNSLogger is an example plugin to show how to write a plugin.
 type DNSLogger struct {
 	Next       plugin.Handler
+	DuckDbPath string
 	SocketAddr string
 	Client     *UDPClient
+	DB         *sql.DB
 }
 
 // ServeDNS implements the plugin.Handler interface. This method gets called when example is used
