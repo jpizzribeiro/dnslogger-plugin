@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	"github.com/coredns/coredns/request"
+	"github.com/elliotwutingfeng/go-fasttld"
 
 	"github.com/coredns/coredns/plugin"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
@@ -16,6 +17,7 @@ import (
 // Define log to be a logger with the plugin name in it. This way we can just use log.Info and
 // friends to log.
 var log = clog.NewWithPlugin("dnslogger")
+var extractor, _ = fasttld.New(fasttld.SuffixListParams{})
 
 // DNSLogger is an example plugin to show how to write a plugin.
 type DNSLogger struct {
@@ -33,6 +35,9 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 	state := request.Request{W: w, Req: r}
 	name := state.Name()
 	qType := dns.TypeToString[state.QType()]
+
+	tld, _ := extractor.Extract(fasttld.URLParams{URL: name})
+	log.Info(tld)
 
 	// Registrar log no servidor
 	rrw := dnstest.NewRecorder(w)
