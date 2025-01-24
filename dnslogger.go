@@ -69,9 +69,13 @@ func (dl DNSLogger) searchDomainOnDuck(name string) *DuckRow {
 		name = strings.TrimSuffix(name, ".")
 	}
 
-	err := dl.DB.QueryRow(`
-   SELECT domain, category_id FROM domains WHERE domain = ? LIMIT 1
-	`, name).Scan(&row.Domain, &row.CategoryId)
+	domainParts := generateDomainParts(name)
+
+	err := dl.DB.QueryRow(fmt.Sprintf(`SELECT domain, category_id
+		FROM domains
+		WHERE domain IN ('%s')
+		ORDER BY LENGTH(domain) DESC
+		LIMIT 1;`, strings.Join(domainParts, "','"))).Scan(&row.Domain, &row.CategoryId)
 	if err != nil {
 		log.Infof("%s not found on Duck", name)
 		log.Error(err)
@@ -90,6 +94,18 @@ func (dl DNSLogger) emitToUDPSocket(logEntry LogEntry) {
 			}
 		}
 	}
+}
+
+func generateDomainParts(domain string) []string {
+	parts := strings.Split(domain, ".")
+	var domains []string
+
+	// Gerar os subdomínios relevantes
+	for i := 0; i < len(parts)-1; i++ {
+		domains = append(domains, strings.Join(parts[i:], "."))
+	}
+
+	return domains
 }
 
 // ServeDNS implements the plugin.Handler interface. This method gets called when example is used
@@ -134,14 +150,14 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 				log.Infof("Domain: %s", row.Domain)
 				log.Infof("CategoryId: %d", row.CategoryId)
 				log.Infof("Category: %s", dl.Categories[row.CategoryId].Name)
-			} else if tld.RegisteredDomain != "" && tld.RegisteredDomain != name {
+			} /* else if tld.RegisteredDomain != "" && tld.RegisteredDomain != name {
 				row = dl.searchDomainOnDuck(tld.RegisteredDomain)
 				if row != nil {
 					log.Infof("WildCard Domain: %s", row.Domain)
 					log.Infof("WildCard CategoryId: %d", row.CategoryId)
 					log.Infof("WildCard Category: %s", dl.Categories[row.CategoryId].Name)
 				}
-			}
+			}*/
 		}
 
 		logEntryJson.RegisteredDomain = tld.RegisteredDomain
@@ -154,7 +170,6 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 				if !onCache {
 					dl.Cache.Set(cacheKey, row, time.Minute)
 					log.Infof("Save domain on cache")
-					logEntryJson.AccessType = "BLOCK"
 				}
 
 				_, ok := sourceIp.BlockCategories[row.CategoryId]
@@ -176,6 +191,7 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 						}
 					}
 
+					logEntryJson.AccessType = "BLOCK"
 					dl.emitToUDPSocket(logEntryJson)
 
 					w.WriteMsg(m)
