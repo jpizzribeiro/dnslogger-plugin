@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/allegro/bigcache/v3"
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	"github.com/coredns/coredns/request"
 	"github.com/elliotwutingfeng/go-fasttld"
 	"github.com/maypok86/otter"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +36,7 @@ type DNSLogger struct {
 	Client     *UDPClient
 	DB         *sql.DB
 	Cache      otter.CacheWithVariableTTL[string, *DuckRow]
+	BigCache   *bigcache.BigCache
 }
 
 type SourceConfig struct {
@@ -59,6 +62,36 @@ type Category struct {
 type DuckRow struct {
 	Domain     string
 	CategoryId int
+	Categories string
+}
+
+func (dl DNSLogger) searchDomainOnBigCache(domain string) *DuckRow {
+	log.Infof("Searching domain on BigCache: %s", domain)
+	row := &DuckRow{}
+
+	if strings.HasSuffix(domain, ".") {
+		domain = strings.TrimSuffix(domain, ".")
+	}
+
+	domainParts := generateDomainParts(domain)
+
+	i := 0
+	for _, domainPart := range domainParts {
+		entry, err := dl.BigCache.Get(domainPart)
+		if err == nil {
+			row.Domain = domainPart
+			row.CategoryId = 9999
+			row.Categories = string(entry)
+			i += 1
+			break
+		}
+	}
+
+	if i == 0 {
+		return nil
+	}
+
+	return row
 }
 
 func (dl DNSLogger) searchDomainOnDuck(name string) *DuckRow {
@@ -94,6 +127,18 @@ func (dl DNSLogger) emitToUDPSocket(logEntry LogEntry) {
 			}
 		}
 	}
+}
+
+func generateDomainPartsReverse(domain string) []string {
+	parts := strings.Split(domain, ".")
+	var domains []string
+
+	// Gerar os subdomínios do maior para o menor
+	for i := len(parts) - 1; i >= 0; i-- {
+		domains = append(domains, strings.Join(parts[i:], "."))
+	}
+
+	return domains
 }
 
 func generateDomainParts(domain string) []string {
@@ -145,26 +190,46 @@ func (dl DNSLogger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 		}
 
 		if !onCache {
+			/*start := time.Now()
 			row = dl.searchDomainOnDuck(strings.TrimSpace(name))
 			if row != nil {
 				log.Infof("Domain: %s", row.Domain)
 				log.Infof("CategoryId: %d", row.CategoryId)
 				log.Infof("Category: %s", dl.Categories[row.CategoryId].Name)
-			} /* else if tld.RegisteredDomain != "" && tld.RegisteredDomain != name {
-				row = dl.searchDomainOnDuck(tld.RegisteredDomain)
-				if row != nil {
-					log.Infof("WildCard Domain: %s", row.Domain)
-					log.Infof("WildCard CategoryId: %d", row.CategoryId)
-					log.Infof("WildCard Category: %s", dl.Categories[row.CategoryId].Name)
-				}
-			}*/
+			}
+			duration := time.Since(start)
+			fmt.Printf("Execução no DuckDB levou %s\n", duration)*/
+
+			start2 := time.Now()
+			row = dl.searchDomainOnBigCache(strings.TrimSpace(state.Name()))
+			if row != nil {
+				log.Infof("Domain: %s", row.Domain)
+				log.Infof("CategoryId: %d", row.CategoryId)
+				log.Infof("Category: %s", row.Categories)
+			}
+			duration2 := time.Since(start2)
+			fmt.Printf("Execução no BigCache levou %s\n", duration2)
+
 		}
 
 		logEntryJson.RegisteredDomain = tld.RegisteredDomain
 
+		var categories []string
 		sourceIp, exists := dl.Sources[ip]
 		if exists {
 			if row != nil {
+				if row.CategoryId == 9999 {
+					categories = strings.Split(row.Categories, ",")
+					for _, category := range categories {
+						cat, _ := strconv.Atoi(category)
+						_, ok := sourceIp.BlockCategories[cat]
+						if ok {
+							row.CategoryId = cat
+							break
+						}
+					}
+				}
+
 				logEntryJson.CategoryId = row.CategoryId
 
 				if !onCache {

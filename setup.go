@@ -8,6 +8,7 @@ import (
 	"github.com/coredns/coredns/plugin"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/allegro/bigcache/v3"
 	_ "github.com/marcboeker/go-duckdb"
@@ -93,12 +94,12 @@ func setup(c *caddy.Controller) error {
 	}
 
 	cacheConfig := bigcache.Config{
-		Shards:             1024,    // Número de shards para concorrência
-		MaxEntrySize:       256,     // Tamanho máximo esperado de cada entrada (em bytes)
-		LifeWindow:         0,       // Tempo de vida dos itens
-		CleanWindow:        0,       // Frequência de limpeza de itens expirados
-		MaxEntriesInWindow: 5500000, // Número de entradas esperado
-		Verbose:            false,   // Logs adicionais
+		Shards:             1024,                 // Número de shards para concorrência
+		MaxEntrySize:       256,                  // Tamanho máximo esperado de cada entrada (em bytes)
+		LifeWindow:         365 * 24 * time.Hour, // Tempo de vida dos itens
+		CleanWindow:        0,                    // Frequência de limpeza de itens expirados
+		MaxEntriesInWindow: 5500000,              // Número de entradas esperado
+		Verbose:            true,                 // Logs adicionais
 	}
 
 	bCache, err := bigcache.NewBigCache(cacheConfig)
@@ -106,6 +107,7 @@ func setup(c *caddy.Controller) error {
 		log.Fatalf("Erro ao inicializar o BigCache: %v", err)
 	}
 
+	d.BigCache = bCache
 	handleCache(bCache, db)
 
 	// Configurar inicialização e finalização
